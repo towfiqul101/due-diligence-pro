@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tailwindcss *)",
+      "Bash(mkdir -p \"c:/dd-wizard-api/app/api/dd-pro/contact/[contactId]\" && echo done)"
+    ],
+    "additionalDirectories": [
+      "c:\\dd-wizard-api\\app\\api\\dd-pro\\contact"
+    ]
+  }
+}
