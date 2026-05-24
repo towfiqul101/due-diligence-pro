@@ -75,7 +75,6 @@ function buildPreparerWizard(loc, firm, firmEmail, contactId) {
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Due Diligence Pro — ${firm}</title>
--->
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--pp-primary:#0f172a;--pp-primary-hover:#1e293b;--pp-accent:#f59e0b;--pp-accent-light:#fef3c7;--pp-accent-glow:rgba(245,158,11,0.15);--pp-green:#10b981;--pp-green-light:#ecfdf5;--pp-red:#ef4444;--pp-red-light:#fef2f2;--pp-blue:#3b82f6;--pp-blue-light:#eff6ff;--pp-purple:#8b5cf6;--pp-pink:#ec4899;--pp-text:#0f172a;--pp-text-sec:#475569;--pp-text-muted:#94a3b8;--pp-bg:#fff;--pp-bg-page:#f8fafc;--pp-bg-sub:#f1f5f9;--pp-border:#e2e8f0;--pp-border-lt:#f1f5f9;--pp-shadow-sm:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);--pp-shadow-md:0 4px 16px -2px rgba(0,0,0,0.08),0 2px 6px -2px rgba(0,0,0,0.04);--pp-shadow-lg:0 12px 40px -8px rgba(0,0,0,0.1),0 4px 12px -4px rgba(0,0,0,0.05);--pp-r:16px;--pp-rs:12px;--pp-font:'DM Sans',system-ui,sans-serif;--pp-font-d:'Plus Jakarta Sans','DM Sans',system-ui,sans-serif}
@@ -429,9 +428,11 @@ function buildPreparerWizard(loc, firm, firmEmail, contactId) {
 </div>
 
 <script>
+window.onerror=function(msg,src,line,col,err){console.error('[DD Pro Error]',msg,'at line',line,err);var b=document.getElementById('ppSearchStatus');if(b){b.className='pp-banner vis err';b.textContent='Script error: '+msg+' (line '+line+'). Check console.';b.style.cssText='display:flex!important'}};
 (function(){
 'use strict';
 var CFG={loc:'${loc}',api:'${apiBase}',prefillContactId:'${contactId}'};
+console.log('[DD Pro] Init — loc:',CFG.loc,'prefillId:',CFG.prefillContactId||'(none)');
 var S={cur:0,pages:[],data:{},depPgs:[],mode:'new',clientData:null,clientEmail:'',isPrefill:false,prefillData:null};
 
 function buildFlow(){
@@ -464,7 +465,37 @@ window.ppBack=function(){if(S.cur>0)show(S.cur-1)};
 window.ppGo=function(name){if(name==='summary'&&S.mode==='existing'){S.pages=['lookup','summary','verify','prepinfo','signoff'];show(1);return}if(name==='client_info'){S.mode='new';S.clientData=null;buildFlow();var idx=S.pages.indexOf('client_info');if(idx>=0)show(idx);return}var idx=S.pages.indexOf(name);if(idx>=0)show(idx)};
 
 window.ppLookup=function(){var q=document.getElementById('ppSearch').value.trim();var st=document.getElementById('ppSearchStatus');var card=document.getElementById('ppClientCard');var btn=document.getElementById('ppSearchBtn');if(!q){st.className='pp-banner vis err';st.textContent='Enter an email, phone, or name.';card.classList.remove('vis');return}btn.disabled=true;btn.textContent='Searching...';st.className='pp-banner vis info';st.textContent='Looking up client...';card.classList.remove('vis');
-fetch(CFG.api+'/lookup?email='+encodeURIComponent(q)+'&locationId='+CFG.loc).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(res){if(!res.ok)throw new Error(res.d.error||'Not found');S.clientData=res.d.contact;S.clientEmail=res.d.contact.email||q;S.mode='existing';Object.keys(res.d.contact).forEach(function(k){if(k.startsWith('dd_'))S.data[k]=res.d.contact[k]});st.className='pp-banner vis ok';st.textContent='Client found! '+res.d.fieldCount+' DD fields on file.';card.classList.add('vis');document.getElementById('ppCardName').textContent=res.d.contact.dd_client_name||res.d.contact.name||q;document.getElementById('ppCardInfo').textContent=(res.d.contact.dd_filing_status||'Status unknown')+' | '+(res.d.contact.dd_interview_date||'Date unknown');document.getElementById('ppSendPanel').style.display='none';buildFlow()}).catch(function(err){st.className='pp-banner vis err';st.textContent=err.message;card.classList.remove('vis');var panel=document.getElementById('ppSendPanel');panel.style.display='block';if(q.includes('@'))document.getElementById('ppSendEmail').value=q}).finally(function(){btn.disabled=false;btn.innerHTML='&#128269; Find'})};
+fetch(CFG.api+'/lookup?email='+encodeURIComponent(q)+'&locationId='+CFG.loc).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(res){
+  if(!res.ok)throw new Error(res.d.error||'Not found');
+  var c=res.d.contact;
+  S.clientEmail=c.email||q;
+  // Load whatever DD data exists (may be empty)
+  Object.keys(c).forEach(function(k){if(k.startsWith('dd_'))S.data[k]=c[k]});
+  // Pre-populate basic contact info for the interview
+  if(!S.data.dd_client_name&&c.name)S.data.dd_client_name=c.name;
+  if(!S.data.dd_client_email&&c.email)S.data.dd_client_email=c.email;
+  if(!S.data.dd_client_phone&&c.phone)S.data.dd_client_phone=c.phone;
+  if(res.d.noData){
+    // Client exists in GHL but no DD data yet — offer to start their interview
+    st.className='pp-banner vis info';st.textContent='Client found in CRM. No prior DD interview on file — start one below.';
+    card.classList.add('vis');
+    document.getElementById('ppCardName').textContent=c.name||c.email||q;
+    document.getElementById('ppCardInfo').textContent='No DD interview on file — click to start';
+    document.getElementById('ppClientCard').querySelector('.pp-btn-nx').textContent='Start DD Interview →';
+    document.getElementById('ppClientCard').querySelector('.pp-btn-nx').onclick=function(){S.mode='new';buildFlow();var idx=S.pages.indexOf('client_info');show(idx>=0?idx:1)};
+    document.getElementById('ppSendPanel').style.display='none';
+  } else {
+    S.clientData=c;S.mode='existing';
+    st.className='pp-banner vis ok';st.textContent='Client found! '+res.d.fieldCount+' DD fields on file.';
+    card.classList.add('vis');
+    document.getElementById('ppCardName').textContent=S.data.dd_client_name||c.name||q;
+    document.getElementById('ppCardInfo').textContent=(S.data.dd_filing_status||'Status unknown')+' | '+(S.data.dd_interview_date||'Date unknown');
+    document.getElementById('ppClientCard').querySelector('.pp-btn-nx').textContent='Review This Client →';
+    document.getElementById('ppClientCard').querySelector('.pp-btn-nx').onclick=function(){ppGo('summary')};
+    document.getElementById('ppSendPanel').style.display='none';
+    buildFlow();
+  }
+}).catch(function(err){st.className='pp-banner vis err';st.textContent=err.message;card.classList.remove('vis');var panel=document.getElementById('ppSendPanel');panel.style.display='block';if(q.includes('@'))document.getElementById('ppSendEmail').value=q}).finally(function(){btn.disabled=false;btn.innerHTML='&#128269; Find'})};
 document.getElementById('ppSearch').addEventListener('keydown',function(e){if(e.key==='Enter')ppLookup()});
 
 window.ppSendLink=function(){var email=document.getElementById('ppSendEmail').value.trim();var phone=document.getElementById('ppSendPhone').value.trim();var name=document.getElementById('ppSendName').value.trim();var btn=document.getElementById('ppSendBtn');var st=document.getElementById('ppSendStatus');if(!email){st.className='pp-banner vis err';st.textContent='Email is required.';return}btn.disabled=true;btn.innerHTML='<span class="pp-spin"></span> Sending...';st.className='pp-banner vis info';st.textContent='Creating contact and sending link...';

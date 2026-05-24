@@ -1,10 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
-
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const API_VERSION = '2021-07-28';
 
 async function isLocationValid(locationId) {
   try {
+    const { createClient } = require('@supabase/supabase-js');
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -21,14 +20,14 @@ async function isLocationValid(locationId) {
     }
     console.log('[Location] Not found in Supabase, checking DD_LOCATIONS fallback');
     const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
-    const found = locations.find(l => l.locationId === locationId);
+    const found = locations.find(function(l) { return l.locationId === locationId; });
     if (found) return { valid: true, tenant: found };
     return { valid: false };
   } catch (err) {
     console.error('[Location] Supabase error:', err.message, '— trying DD_LOCATIONS fallback');
     try {
       const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
-      const found = locations.find(l => l.locationId === locationId);
+      const found = locations.find(function(l) { return l.locationId === locationId; });
       if (found) return { valid: true, tenant: found };
     } catch(e) {}
     return { valid: false };
@@ -37,46 +36,48 @@ async function isLocationValid(locationId) {
 
 async function ghlRequest(method, path, pit, body) {
   const opts = {
-    method,
+    method: method,
     headers: {
-      'Authorization': `Bearer ${pit}`,
+      'Authorization': 'Bearer ' + pit,
       'Content-Type': 'application/json',
       'Version': API_VERSION,
       'Accept': 'application/json'
     }
   };
   if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(`${GHL_BASE}${path}`, opts);
+  const r = await fetch(GHL_BASE + path, opts);
   const data = await r.json();
-  if (!r.ok) throw new Error(`GHL ${r.status}: ${data.message || JSON.stringify(data)}`);
+  if (!r.ok) throw new Error('GHL ' + r.status + ': ' + (data.message || JSON.stringify(data)));
   return data;
 }
 
 async function upsertContact(pit, locationId, contact, customFields, tags) {
   const cfArray = Object.entries(customFields)
-    .filter(([k, v]) => v !== undefined && v !== null && v !== '')
-    .map(([k, v]) => ({ key: k, field_value: v }));
+    .filter(function([k, v]) { return v !== undefined && v !== null && v !== ''; })
+    .map(function([k, v]) { return { key: k, field_value: v }; });
 
-  return await ghlRequest('POST', '/contacts/upsert', pit, {
-    locationId,
-    ...(contact.name && { name: contact.name }),
-    ...(contact.email && { email: contact.email }),
-    ...(contact.phone && { phone: contact.phone }),
-    customFields: cfArray,
-    source: 'DD Wizard',
-    tags: tags || ['dd-wizard-submitted']
-  });
+  return await ghlRequest('POST', '/contacts/upsert', pit, Object.assign(
+    { locationId: locationId },
+    contact.name ? { name: contact.name } : {},
+    contact.email ? { email: contact.email } : {},
+    contact.phone ? { phone: contact.phone } : {},
+    {
+      customFields: cfArray,
+      source: 'DD Wizard',
+      tags: tags || ['dd-wizard-submitted']
+    }
+  ));
 }
 
 async function addTag(pit, contactId, tag) {
-  return await ghlRequest('POST', `/contacts/${contactId}/tags`, pit, { tags: [tag] });
+  return await ghlRequest('POST', '/contacts/' + contactId + '/tags', pit, { tags: [tag] });
 }
 
 async function updateContact(pit, contactId, customFields) {
   const cfArray = Object.entries(customFields)
-    .filter(([k, v]) => v !== undefined && v !== null)
-    .map(([k, v]) => ({ key: k, field_value: v }));
-  return await ghlRequest('PUT', `/contacts/${contactId}`, pit, { customFields: cfArray });
+    .filter(function([k, v]) { return v !== undefined && v !== null; })
+    .map(function([k, v]) { return { key: k, field_value: v }; });
+  return await ghlRequest('PUT', '/contacts/' + contactId, pit, { customFields: cfArray });
 }
 
 function generateBasicNotes(data) {
@@ -87,7 +88,7 @@ function generateBasicNotes(data) {
   if (data.dd_flag_odc === 'Yes') credits.push('ODC');
   if (data.dd_flag_aoc === 'Yes') credits.push('AOC');
   const dc = parseInt(data.dd_dependent_count) || 0;
-  return `Client ${data.dd_client_name || '[name]'} completed DD interview on ${new Date().toLocaleDateString()}. Filing: ${data.dd_filing_status || 'N/A'}. ${dc} dependent(s). Credits: ${credits.join(', ') || 'none'}. ${data.dd_self_employed === 'Yes' ? 'Self-employed (' + (data.dd_se_business_type || 'N/A') + ').' : ''} Docs: ${data.dd_docs_uploaded || 'N/A'}. Manual review recommended.`;
+  return 'Client ' + (data.dd_client_name || '[name]') + ' completed DD interview on ' + new Date().toLocaleDateString() + '. Filing: ' + (data.dd_filing_status || 'N/A') + '. ' + dc + ' dependent(s). Credits: ' + (credits.join(', ') || 'none') + '. ' + (data.dd_self_employed === 'Yes' ? 'Self-employed (' + (data.dd_se_business_type || 'N/A') + ').' : '') + ' Docs: ' + (data.dd_docs_uploaded || 'N/A') + '. Manual review recommended.';
 }
 
 async function validateWithAI(data) {
@@ -100,7 +101,7 @@ async function validateWithAI(data) {
   const depSummary = [];
   const dc = parseInt(data.dd_dependent_count) || 0;
   for (let i = 1; i <= dc; i++) {
-    depSummary.push(`Dep${i}: ${data['dd_dep_'+i+'_name']||'?'}, ${data['dd_dep_'+i+'_relationship']||'?'}, resid=${data['dd_dep_'+i+'_residency']||'?'}, age=${data['dd_dep_'+i+'_age_status']||'?'}, id=${data['dd_dep_'+i+'_id_type']||'?'}, competing=${data['dd_dep_'+i+'_competing_claim']||'?'}`);
+    depSummary.push('Dep' + i + ': ' + (data['dd_dep_'+i+'_name']||'?') + ', ' + (data['dd_dep_'+i+'_relationship']||'?') + ', resid=' + (data['dd_dep_'+i+'_residency']||'?') + ', age=' + (data['dd_dep_'+i+'_age_status']||'?') + ', id=' + (data['dd_dep_'+i+'_id_type']||'?') + ', competing=' + (data['dd_dep_'+i+'_competing_claim']||'?'));
   }
 
   const prompt = `You are an IRS due diligence expert. Analyze these tax client responses for inconsistencies and red flags.
@@ -116,7 +117,7 @@ Respond ONLY with valid JSON, no markdown, no code fences, no explanation before
 {"status":"clean" or "flagged","risk_count":number,"flags":[{"severity":"high" or "medium" or "low","description":"..."}],"preparer_notes":"Professional summary for preparer audit defense documentation. Include client name, filing status, credits, dependents, and any issues. 2-3 sentences."}`;
 
   try {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -137,22 +138,16 @@ Respond ONLY with valid JSON, no markdown, no code fences, no explanation before
       return { status: 'error', risk_count: 0, flags: [], preparer_notes: generateBasicNotes(data) };
     }
 
-    // Extract text from candidates — handle thinking models that have multiple parts
     let text = '';
     const candidates = result.candidates || [];
     if (candidates.length > 0) {
-      const parts = candidates[0].content?.parts || [];
-      // Find the text part (skip "thought" parts from thinking models)
-      for (const part of parts) {
-        if (part.text && !part.thought) {
-          text = part.text;
-          break;
-        }
+      const parts = candidates[0].content && candidates[0].content.parts || [];
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].text && !parts[i].thought) { text = parts[i].text; break; }
       }
-      // Fallback: just grab the last text part
       if (!text) {
-        for (const part of parts.reverse()) {
-          if (part.text) { text = part.text; break; }
+        for (let i = parts.length - 1; i >= 0; i--) {
+          if (parts[i].text) { text = parts[i].text; break; }
         }
       }
     }
@@ -164,9 +159,7 @@ Respond ONLY with valid JSON, no markdown, no code fences, no explanation before
       return { status: 'error', risk_count: 0, flags: [], preparer_notes: generateBasicNotes(data) };
     }
 
-    // Clean and parse JSON — remove code fences, whitespace, any prefix text
     let cleaned = text.replace(/```json\n?|```\n?/g, '').trim();
-    // If the response starts with non-JSON text, try to find the JSON object
     const jsonStart = cleaned.indexOf('{');
     const jsonEnd = cleaned.lastIndexOf('}');
     if (jsonStart >= 0 && jsonEnd > jsonStart) {
@@ -183,14 +176,14 @@ Respond ONLY with valid JSON, no markdown, no code fences, no explanation before
   }
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
     const { locationId, mode, contact, answers, prefillContactId, prefillSource } = req.body;
     if (!locationId) return res.status(400).json({ error: 'Missing locationId' });
-    if (!contact?.email && !contact?.phone) return res.status(400).json({ error: 'Email or phone required' });
+    if (!contact || (!contact.email && !contact.phone)) return res.status(400).json({ error: 'Email or phone required' });
     if (!answers) return res.status(400).json({ error: 'No answers' });
 
     const license = await isLocationValid(locationId);
@@ -200,52 +193,50 @@ export default async function handler(req, res) {
     console.log('[Submit] loc=' + locationId + ' mode=' + mode + ' PIT=' + (pit ? 'SET' : 'MISSING'));
     if (!pit) return res.status(500).json({ error: 'GHL token not configured for this location. Set ghl_pit in dd_tenants.' });
 
-    const enriched = { ...answers, dd_interview_mode: mode === 'preparer' ? 'Preparer Interview' : mode === 'send-link' ? 'Client Self-Service' : 'Client Self-Service', dd_interview_date: new Date().toISOString().split('T')[0], dd_interview_status: mode === 'send-link' ? 'Link Sent' : 'Complete' };
+    const enriched = Object.assign({}, answers, {
+      dd_interview_mode: mode === 'preparer' ? 'Preparer Interview' : 'Client Self-Service',
+      dd_interview_date: new Date().toISOString().split('T')[0],
+      dd_interview_status: mode === 'send-link' ? 'Link Sent' : 'Complete'
+    });
 
-    // Upsert contact with mode-specific tags
     const upsertTags = mode === 'send-link' ? ['dd_iv_link_sent'] : ['dd-wizard-submitted'];
     let result;
     try {
       result = await upsertContact(pit, locationId, { email: contact.email, phone: contact.phone, name: answers.dd_client_name }, enriched, upsertTags);
     } catch(e) { return res.status(502).json({ error: 'GHL save failed', detail: e.message }); }
 
-    const contactId = result.contact?.id;
+    const contactId = result.contact && result.contact.id;
 
-    // Skip AI and tagging for send-link mode — just create the contact
     if (mode === 'send-link') {
       return res.status(200).json({
-        success: true, contactId, isNew: result.new || false, mode: 'send-link'
+        success: true, contactId: contactId, isNew: result.new || false, mode: 'send-link'
       });
     }
 
-    // AI validation (only for client/preparer modes)
     let ai;
     try { ai = await validateWithAI(enriched); } catch(e) { ai = { status: 'error', risk_count: 0, flags: [], preparer_notes: generateBasicNotes(enriched) }; }
 
-    // Write AI results back
     try {
       await updateContact(pit, contactId, {
         dd_ai_result: ai.status === 'flagged' ? 'Flagged' : ai.status === 'clean' ? 'Clean' : 'Error',
-        dd_ai_flags: ai.flags?.map(f => `[${(f.severity||'').toUpperCase()}] ${f.description}`).join('\n') || '',
+        dd_ai_flags: (ai.flags || []).map(function(f) { return '[' + ((f.severity||'').toUpperCase()) + '] ' + f.description; }).join('\n'),
         dd_risk_count: String(ai.risk_count || 0),
         dd_review_required: (ai.risk_count || 0) > 0 ? 'Yes' : 'No',
         dd_preparer_notes: ai.preparer_notes || ''
       });
     } catch(e) { /* non-fatal */ }
 
-    // Add tags
     try {
       await addTag(pit, contactId, (ai.risk_count || 0) > 0 ? 'dd-flagged' : 'dd-clear');
     } catch(e) { /* non-fatal */ }
 
-    // Write-back DD completion status to the originating TaxIntake contact
     if (prefillContactId && prefillSource === 'taxintake') {
       try {
         const today = new Date().toISOString().split('T')[0];
         await updateContact(pit, prefillContactId, {
           dd_interview_status: 'Complete',
           dd_interview_date: today,
-          dd_ai_result: ai.status === 'flagged' ? 'Flagged' : ai.status === 'clean' ? 'Clean' : 'Error',
+          dd_ai_result: ai.status === 'flagged' ? 'Flagged' : ai.status === 'clean' ? 'Clean' : 'Error'
         });
         console.log('[Submit] Wrote DD status back to TI contact', prefillContactId);
       } catch(e) {
@@ -254,9 +245,9 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      success: true, contactId, isNew: result.new || false,
-      aiResult: { status: ai.status, riskCount: ai.risk_count, flagCount: ai.flags?.length || 0 }
+      success: true, contactId: contactId, isNew: result.new || false,
+      aiResult: { status: ai.status, riskCount: ai.risk_count, flagCount: (ai.flags || []).length }
     });
 
   } catch(e) { return res.status(500).json({ error: e.message }); }
-}
+};

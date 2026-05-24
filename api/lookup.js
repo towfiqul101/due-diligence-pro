@@ -185,15 +185,12 @@ module.exports = async function handler(req, res) {
     var ddCount = Object.keys(ddFields).filter(function(k) { return k.startsWith('dd_'); }).length;
     console.log('[Lookup] Extracted', ddCount, 'dd_ fields for', ddFields.name || email);
 
-    if (ddCount === 0) {
-      return res.status(404).json({ error: 'Client found but no DD data on file.' });
-    }
-
     return res.status(200).json({
       success: true,
       contact: ddFields,
       contactId: contactId,
-      fieldCount: ddCount
+      fieldCount: ddCount,
+      noData: ddCount === 0
     });
 
   } catch(e) {
