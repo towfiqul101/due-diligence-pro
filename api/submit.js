@@ -167,7 +167,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { locationId, mode, contact, answers } = req.body;
+    const { locationId, mode, contact, answers, prefillContactId, prefillSource } = req.body;
     if (!locationId) return res.status(400).json({ error: 'Missing locationId' });
     if (!contact?.email && !contact?.phone) return res.status(400).json({ error: 'Email or phone required' });
     if (!answers) return res.status(400).json({ error: 'No answers' });
@@ -213,6 +213,21 @@ export default async function handler(req, res) {
     try {
       await addTag(pit, contactId, (ai.risk_count || 0) > 0 ? 'dd-flagged' : 'dd-clear');
     } catch(e) { /* non-fatal */ }
+
+    // Write-back DD completion status to the originating TaxIntake contact
+    if (prefillContactId && prefillSource === 'taxintake') {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        await updateContact(pit, prefillContactId, {
+          dd_interview_status: 'Complete',
+          dd_interview_date: today,
+          dd_ai_result: ai.status === 'flagged' ? 'Flagged' : ai.status === 'clean' ? 'Clean' : 'Error',
+        });
+        console.log('[Submit] Wrote DD status back to TI contact', prefillContactId);
+      } catch(e) {
+        console.warn('[Submit] Write-back to TI contact failed (non-fatal):', e.message);
+      }
+    }
 
     return res.status(200).json({
       success: true, contactId, isNew: result.new || false,

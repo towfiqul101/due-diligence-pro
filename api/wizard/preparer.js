@@ -26,7 +26,8 @@ module.exports = function handler(req, res) {
   firm = decodeURIComponent(firm).replace(/</g, '&lt;').replace(/>/g, '&gt;');
   firmEmail = decodeURIComponent(firmEmail).replace(/</g, '&lt;');
 
-  var html = buildPreparerWizard(loc, firm, firmEmail);
+  var contactId = (req.query.contactId || '').replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
+  var html = buildPreparerWizard(loc, firm, firmEmail, contactId);
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
@@ -38,8 +39,9 @@ function errPg(title, msg) {
   return '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f8fafc;margin:0"><div style="text-align:center;max-width:400px;padding:40px"><div style="font-size:48px;margin-bottom:16px">&#128274;</div><h2 style="color:#0f172a;margin-bottom:8px">' + title + '</h2><p style="color:#64748b;font-size:15px;line-height:1.6">' + msg + '</p></div></body></html>';
 }
 
-function buildPreparerWizard(loc, firm, firmEmail) {
-  var apiBase = 'https://dd-wizard-api.vercel.app/api';
+function buildPreparerWizard(loc, firm, firmEmail, contactId) {
+  var apiBase = 'https://due-diligence-pro-phi.vercel.app/api';
+  contactId = (contactId || '').replace(/[^a-zA-Z0-9_-]/g, '');
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -161,6 +163,14 @@ function buildPreparerWizard(loc, firm, firmEmail) {
 .pp-row{display:flex;gap:12px}
 .pp-row>.pp-f{flex:1}
 @media(max-width:480px){.pp{padding:16px 12px}.pp-pg{padding:26px 20px}.pp-rg{flex-direction:column}.pp-search{flex-direction:column}.pp-hdr{flex-direction:column;text-align:center}.pp-or::before,.pp-or::after{display:none}.pp-row{flex-direction:column}}
+.pp-prefill-banner{background:linear-gradient(135deg,#fef3c7,#fffbeb);border:2px solid var(--pp-accent);border-radius:var(--pp-rs);padding:14px 20px;margin-bottom:16px;display:none;align-items:flex-start;gap:12px}
+.pp-prefill-banner.vis{display:flex;animation:ppFade 0.4s ease}
+.pp-prefill-badge{background:var(--pp-accent);color:#0f172a;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0;letter-spacing:0.3px;margin-top:1px}
+.pp-prefill-info{flex:1;min-width:0}
+.pp-prefill-name{font-size:15px;font-weight:700;color:#92400e}
+.pp-prefill-sub{font-size:12.5px;color:#92400e;margin-top:2px;line-height:1.4}
+.pp-prefilled .pp-inp,.pp-prefilled .pp-sel,.pp-prefilled .pp-ta{background:#fef9c3!important;border-color:#f59e0b!important}
+.pp-prefill-dep-card{background:linear-gradient(135deg,var(--pp-green-light),#f0fdf4);border:1px solid var(--pp-green);border-radius:var(--pp-rs);padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:13.5px;color:#166534;font-weight:500}
 </style>
 
 <div class="pp" id="ppW">
@@ -169,6 +179,15 @@ function buildPreparerWizard(loc, firm, firmEmail) {
     <div><h1>Due Diligence Pro</h1><div class="pp-hdr-sub">${firm} — Preparer Portal</div></div>
   </div>
   <div class="pp-prog"><div class="pp-prog-bar"><div class="pp-prog-fill" id="ppPF" style="width:0%"></div></div><div class="pp-prog-lbl"><span id="ppPT">Step 1</span><span class="pp-prog-pct" id="ppPP">0%</span></div></div>
+
+  <div id="ppPrefillBanner" class="pp-prefill-banner">
+    <div class="pp-prefill-badge">&#10003; Pre-filled from TaxIntake</div>
+    <div class="pp-prefill-info">
+      <div class="pp-prefill-name" id="ppPrefillName">—</div>
+      <div class="pp-prefill-sub">Some steps have been pre-filled. Review and complete compliance questions.</div>
+    </div>
+    <button onclick="ppPrefillExpand()" style="background:none;border:none;font-size:12.5px;font-weight:600;color:#92400e;text-decoration:underline;cursor:pointer;font-family:var(--pp-font);white-space:nowrap;flex-shrink:0">Edit pre-filled data</button>
+  </div>
 
   <!-- P1: FIND OR CREATE -->
   <div class="pp-pg active" data-pg="lookup">
@@ -383,8 +402,8 @@ function buildPreparerWizard(loc, firm, firmEmail) {
 <script>
 (function(){
 'use strict';
-var CFG={loc:'${loc}',api:'${apiBase}'};
-var S={cur:0,pages:[],data:{},depPgs:[],mode:'new',clientData:null,clientEmail:''};
+var CFG={loc:'${loc}',api:'${apiBase}',prefillContactId:'${contactId}'};
+var S={cur:0,pages:[],data:{},depPgs:[],mode:'new',clientData:null,clientEmail:'',isPrefill:false,prefillData:null};
 
 function buildFlow(){
   var p;
@@ -441,12 +460,104 @@ document.getElementById('ppSumContent').innerHTML=h;document.getElementById('ppS
 window.ppSubmit=function(){if(!validate('signoff'))return;if(S.data.dd_preparer_signature!=='Yes'){var f=getEl('signoff').querySelector('[data-f="dd_preparer_signature"]');if(f)f.classList.add('err');return}var btn=document.getElementById('ppSubBtn'),banner=document.getElementById('ppErrBanner');banner.classList.remove('vis');btn.disabled=true;btn.innerHTML='<span class="pp-spin"></span> Submitting...';
 var answers={};Object.keys(S.data).forEach(function(k){if(k.startsWith('dd_')&&S.data[k])answers[k]=S.data[k]});var email=S.clientEmail||S.data.dd_client_email||'';
 var payload={locationId:CFG.loc,mode:'preparer',contact:{email:email,phone:S.data.dd_client_phone||'',name:S.data.dd_client_name||''},answers:answers};
+if(CFG.prefillContactId){payload.prefillContactId=CFG.prefillContactId;payload.prefillSource='taxintake';answers.dd_prefill_source='taxintake';answers.dd_prefill_contact_id=CFG.prefillContactId;answers.dd_prefill_date=new Date().toISOString().split('T')[0];}
 fetch(CFG.api+'/submit',{method:'POST',headers:{'Content-Type':'application/json','X-Location-Id':CFG.loc},body:JSON.stringify(payload)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||d.message||'Failed');return d})}).then(function(res){document.getElementById('ppOkName').textContent=S.data.dd_client_name||S.clientEmail||'the client';document.querySelectorAll('.pp-pg').forEach(function(p){p.classList.remove('active')});getEl('success').classList.add('active');document.querySelector('.pp-hdr').style.display='none';document.querySelector('.pp-prog').style.display='none'}).catch(function(err){banner.textContent=err.message;banner.className='pp-banner vis err';btn.disabled=false;btn.innerHTML='Submit & Complete &#9989;'})};
 
 window.ppOpenPDF=function(){var email=S.clientEmail||S.data.dd_client_email||'';if(!email){alert('No client email');return}window.open(CFG.api+'/pdf?email='+encodeURIComponent(email)+'&locationId='+CFG.loc,'_blank')};
 window.ppViewAI=function(){var panel=document.getElementById('ppAIPanel');var notes=document.getElementById('ppAINotes');if(panel.style.display==='none'){var n=S.data.dd_preparer_notes||'';if(n){notes.textContent=n;panel.style.display='block'}else{var email=S.clientEmail||S.data.dd_client_email||'';notes.textContent='Loading...';panel.style.display='block';fetch(CFG.api+'/lookup?email='+encodeURIComponent(email)+'&locationId='+CFG.loc).then(function(r){return r.json()}).then(function(d){if(d.success&&d.contact.dd_preparer_notes){notes.textContent=d.contact.dd_preparer_notes;if(d.contact.dd_ai_result)notes.textContent+='\n\nAI Result: '+d.contact.dd_ai_result;if(d.contact.dd_risk_count)notes.textContent+='\nRisk Flags: '+d.contact.dd_risk_count}else notes.textContent='No AI analysis available yet.'}).catch(function(){notes.textContent='Failed to load.'})}}else panel.style.display='none'};
 
+// ── Pre-fill mode ──────────────────────────────────────────────────────────────
+function ppInitPrefill(){
+  var lkPg=getEl('lookup');
+  if(lkPg){
+    var ov=document.createElement('div');
+    ov.id='ppPFLoading';
+    ov.innerHTML='<div style="text-align:center;padding:48px 16px"><div style="display:inline-block;width:44px;height:44px;border:4px solid rgba(245,158,11,0.2);border-top-color:#f59e0b;border-radius:50%;animation:ppSpin 0.8s linear infinite"></div><div style="margin-top:18px;font-size:16px;font-weight:600;color:var(--pp-text)">Loading client data from TaxIntake Pro...</div><div style="font-size:13px;color:var(--pp-text-muted);margin-top:6px">Connecting to GHL...</div></div>';
+    Array.from(lkPg.children).forEach(function(el){el.style.display='none'});
+    lkPg.appendChild(ov);
+  }
+  fetch(CFG.api+'/prefill?loc='+encodeURIComponent(CFG.loc)+'&contactId='+encodeURIComponent(CFG.prefillContactId))
+    .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
+    .then(function(res){
+      if(!res.ok)throw new Error(res.d.error||'Pre-fill failed');
+      ppApplyPrefill(res.d);
+    })
+    .catch(function(err){
+      console.error('[Prefill]',err.message);
+      var pg=getEl('lookup');
+      if(pg){
+        var ov2=document.getElementById('ppPFLoading');
+        if(ov2)ov2.remove();
+        Array.from(pg.children).forEach(function(el){el.style.display=''});
+      }
+      var st=document.getElementById('ppSearchStatus');
+      if(st){st.className='pp-banner vis err';st.textContent='Pre-fill error: '+err.message;}
+    });
+}
+
+function ppApplyPrefill(data){
+  S.prefillData=data.prefill||{};
+  Object.keys(S.prefillData).forEach(function(k){S.data[k]=S.prefillData[k]});
+  if(S.data.dd_filing_status==='Head of Household')S.data.dd_flag_hoh='Yes';
+  if(S.data.dd_has_dependents==='Yes'&&S.data.dd_dependent_count){
+    var dcEl=document.getElementById('ppDepCnt');
+    if(dcEl)dcEl.classList.remove('hidden');
+  }
+  ensureDeps();buildFlow();
+  var banner=document.getElementById('ppPrefillBanner');
+  if(banner){banner.classList.add('vis');document.getElementById('ppPrefillName').textContent=data.contactName||'Client';}
+  var clientInfoComplete=S.data.dd_client_name&&S.data.dd_client_dob&&S.data.dd_filing_status&&S.data.dd_has_dependents;
+  var startPg=clientInfoComplete?'credits':'client_info';
+  var startIdx=S.pages.indexOf(startPg);
+  show(startIdx>=0?startIdx:1);
+  setTimeout(ppPopulateFormFields,80);
+}
+
+function ppPopulateFormFields(){
+  if(!S.prefillData)return;
+  Object.keys(S.prefillData).forEach(function(key){
+    var val=S.prefillData[key];
+    if(!val)return;
+    document.querySelectorAll('.pp-f[data-f="'+key+'"]').forEach(function(fieldEl){
+      fieldEl.classList.add('pp-prefilled');
+      var inp=fieldEl.querySelector('.pp-inp,.pp-ta');
+      if(inp){inp.value=val;return;}
+      var sel=fieldEl.querySelector('.pp-sel');
+      if(sel){
+        for(var i=0;i<sel.options.length;i++){
+          if(sel.options[i].value===val||sel.options[i].text===val){sel.selectedIndex=i;break;}
+        }
+        return;
+      }
+      fieldEl.querySelectorAll('.pp-rb').forEach(function(rb){
+        rb.classList.remove('sel');
+        if(rb.getAttribute('data-v')===val)rb.classList.add('sel');
+      });
+    });
+  });
+  if(S.data.dd_has_dependents==='Yes')ppToggle('ppDepCnt',true);
+  if(S.data.dd_self_employed==='Yes'){ppToggle('ppST',true);ppToggle('ppSE',true);ppToggle('ppSR',true);ppToggle('ppSBK',true);}
+  S.depPgs.forEach(function(depPg,idx){
+    var n=idx+1;
+    if(S.prefillData['dd_dep_'+n+'_name']&&!depPg.querySelector('.pp-prefill-dep-card')){
+      var card=document.createElement('div');
+      card.className='pp-prefill-dep-card';
+      card.innerHTML='<span style="font-size:18px">&#10003;</span><span><strong>Pre-filled from TaxIntake Pro</strong> — review the fields below and complete any required answers.</span>';
+      var hdr=depPg.querySelector('.pp-dep-hdr');
+      if(hdr)hdr.after(card);
+    }
+  });
+}
+
+window.ppPrefillExpand=function(){
+  var idx=S.pages.indexOf('client_info');
+  show(idx>=0?idx:1);
+  setTimeout(ppPopulateFormFields,50);
+};
+// ── End pre-fill mode ───────────────────────────────────────────────────────────
+
 buildFlow();updateProg();
+if(CFG.prefillContactId){S.isPrefill=true;ppInitPrefill();}
 })();
 </script>
 
