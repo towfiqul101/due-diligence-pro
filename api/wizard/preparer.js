@@ -261,6 +261,15 @@ function buildPreparerWizard(loc, firm, firmEmail, contactId) {
   <div class="pp-pg" data-pg="credits">
     <div class="pp-pg-ico">&#11088;</div>
     <div class="pp-ttl">Tax Credits</div>
+    <div style="background:var(--pp-card);border:1px solid var(--pp-border);border-radius:10px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:var(--pp-text)">&#128101; Dependents:
+        <select class="pp-sel" id="ppDepCntCrSel" style="width:auto;padding:6px 10px;font-size:14px;min-width:70px" onchange="S.data.dd_dependent_count=this.value">
+          <option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+        </select>
+      </div>
+      <span style="font-size:12px;color:var(--pp-text-muted)">Change if client has more/fewer dependents</span>
+    </div>
+    <div class="pp-f" data-f="dd_flag_hoh" data-req="1"><label class="pp-lbl">Head of Household? <span class="pp-req">*</span></label><div class="pp-rg"><div class="pp-rb" data-v="Yes" onclick="ppRad(this)">Yes</div><div class="pp-rb" data-v="No" onclick="ppRad(this)">No</div><div class="pp-rb" data-v="Not Sure" onclick="ppRad(this)">Not Sure</div></div><div class="pp-errmsg">Required</div></div>
     <div class="pp-f" data-f="dd_flag_eic" data-req="1"><label class="pp-lbl">EIC? <span class="pp-req">*</span></label><div class="pp-rg"><div class="pp-rb" data-v="Yes" onclick="ppRad(this)">Yes</div><div class="pp-rb" data-v="No" onclick="ppRad(this)">No</div><div class="pp-rb" data-v="Not Sure" onclick="ppRad(this)">Not Sure</div></div><div class="pp-errmsg">Required</div></div>
     <div class="pp-f" data-f="dd_flag_ctc"><label class="pp-lbl">CTC?</label><div class="pp-rg"><div class="pp-rb" data-v="Yes" onclick="ppRad(this)">Yes</div><div class="pp-rb" data-v="No" onclick="ppRad(this)">No</div><div class="pp-rb" data-v="Not Sure" onclick="ppRad(this)">Not Sure</div></div></div>
     <div class="pp-f" data-f="dd_flag_odc"><label class="pp-lbl">ODC?</label><div class="pp-rg"><div class="pp-rb" data-v="Yes" onclick="ppRad(this)">Yes</div><div class="pp-rb" data-v="No" onclick="ppRad(this)">No</div><div class="pp-rb" data-v="Not Sure" onclick="ppRad(this)">Not Sure</div></div></div>
@@ -575,7 +584,8 @@ function ppApplyPrefill(data){
   S.prefillData=data.prefill||{};
   Object.keys(S.prefillData).forEach(function(k){S.data[k]=S.prefillData[k]});
   console.log('[DD Pro] ppApplyPrefill — depCount:',S.data.dd_dependent_count,'dep1Name:',S.data.dd_dep_1_name,'dep1Dob:',S.data.dd_dep_1_dob);
-  if(S.data.dd_filing_status==='Head of Household')S.data.dd_flag_hoh='Yes';
+  if(S.data.dd_filing_status==='Head of Household'){S.data.dd_flag_hoh='Yes';S.prefillData.dd_flag_hoh='Yes';}
+  if(S.data.dd_dependent_count)S.prefillData.dd_dependent_count=S.data.dd_dependent_count;
   if(S.data.dd_has_dependents==='Yes'&&S.data.dd_dependent_count){
     var dcEl=document.getElementById('ppDepCnt');
     if(dcEl)dcEl.classList.remove('hidden');
@@ -617,6 +627,7 @@ function ppPopulateFormFields(){
     });
   });
   console.log('[DD Pro] ppPopulateFormFields — populated:',populated,'notFound:',notFound);
+  var crSel=document.getElementById('ppDepCntCrSel');if(crSel&&S.data.dd_dependent_count)crSel.value=S.data.dd_dependent_count;
   if(S.data.dd_has_dependents==='Yes')ppToggle('ppDepCnt',true);
   if(S.data.dd_self_employed==='Yes'){ppToggle('ppST',true);ppToggle('ppSE',true);ppToggle('ppSR',true);ppToggle('ppSBK',true);}
   S.depPgs.forEach(function(depPg,idx){
