@@ -12,7 +12,7 @@ async function isLocationValid(locationId) {
   try {
     const { createClient } = require('@supabase/supabase-js');
     const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
     const { data } = await supabase
@@ -142,12 +142,15 @@ module.exports = async function handler(req, res) {
   var loc = req.query.loc;
   var contactId = (req.query.contactId || '').replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 100);
 
+  console.log('PREFILL called with:', { loc, contactId: req.query.contactId });
+
   if (!loc) return res.status(400).json({ error: 'Missing loc param' });
   if (!contactId) return res.status(400).json({ error: 'Missing contactId param' });
 
   var locResult = await isLocationValid(loc);
   if (!locResult.valid) return res.status(403).json({ error: 'Location not registered or not active' });
 
+  console.log('Tenant found:', JSON.stringify(locResult.tenant));
   var pit = locResult.tenant.ghl_pit || locResult.tenant.pit;
   console.log('[Prefill] loc=' + loc + ' PIT=' + (pit ? 'SET(' + String(pit).substring(0,8) + '...)' : 'MISSING') + ' contactId=' + contactId);
   if (!pit) return res.status(500).json({ error: 'GHL token not configured for this location. Set ghl_pit in dd_tenants.' });
@@ -155,8 +158,12 @@ module.exports = async function handler(req, res) {
   try {
     var fieldMap = await getFieldMap(loc, pit);
 
+    var ghlContactUrl = 'https://services.leadconnectorhq.com/contacts/' + encodeURIComponent(contactId);
+    console.log('GHL fetch URL:', ghlContactUrl);
     var contactRes = await ghlGet('/contacts/' + encodeURIComponent(contactId), pit);
+    console.log('GHL response status:', contactRes.status);
     if (!contactRes.ok) {
+      console.error('GHL contact fetch failed:', JSON.stringify(contactRes.data).substring(0, 300));
       return res.status(contactRes.status === 404 ? 404 : 502).json({
         error: 'Contact not found in GHL'
       });

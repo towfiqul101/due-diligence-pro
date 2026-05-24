@@ -13,7 +13,7 @@ async function isLocationValid(locationId) {
   try {
     const { createClient } = require('@supabase/supabase-js');
     const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
     const { data } = await supabase
@@ -104,6 +104,8 @@ module.exports = async function handler(req, res) {
     var email = req.query.email;
     var locationId = req.query.locationId;
 
+    console.log('LOOKUP called with:', { locationId, email });
+
     if (!email) return res.status(400).json({ error: 'Email is required' });
     if (!locationId) return res.status(400).json({ error: 'Location ID is required' });
 
@@ -111,7 +113,9 @@ module.exports = async function handler(req, res) {
     if (!license.valid) {
       return res.status(403).json({ error: 'License validation failed', reason: 'Not licensed' });
     }
+    console.log('Tenant from Supabase:', JSON.stringify(license.tenant));
     var pit = license.tenant.ghl_pit || license.tenant.pit;
+    console.log('GHL PIT:', pit ? 'SET' : 'MISSING');
     console.log('[Lookup] loc=' + locationId + ' PIT=' + (pit ? 'SET' : 'MISSING'));
     if (!pit) return res.status(500).json({ error: 'GHL token not configured for this location. Set ghl_pit in dd_tenants.' });
 
@@ -128,10 +132,10 @@ module.exports = async function handler(req, res) {
     // ===== STEP 2: Find contact by email =====
     var contactId = null;
 
-    var searchRes = await ghlGet(
-      '/contacts/?locationId=' + locationId + '&query=' + encodeURIComponent(email) + '&limit=1',
-      pit
-    );
+    var searchPath = '/contacts/?locationId=' + locationId + '&query=' + encodeURIComponent(email) + '&limit=1';
+    console.log('GHL search URL:', 'https://services.leadconnectorhq.com' + searchPath);
+    var searchRes = await ghlGet(searchPath, pit);
+    console.log('GHL response status:', searchRes.status, 'contacts:', searchRes.data?.contacts?.length || 0);
     if (searchRes.ok && searchRes.data.contacts && searchRes.data.contacts.length > 0) {
       contactId = searchRes.data.contacts[0].id;
     }
