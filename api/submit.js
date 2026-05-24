@@ -198,53 +198,71 @@ module.exports = async function handler(req, res) {
       dd_interview_status: mode === 'send-link' ? 'Link Sent' : 'Complete'
     });
 
-    const upsertTags = mode === 'send-link' ? ['dd_iv_link_sent'] : ['dd-wizard-submitted'];
-    let result;
-    try {
-      result = await upsertContact(pit, locationId, { email: contact.email, phone: contact.phone, name: answers.dd_client_name }, enriched, upsertTags);
-    } catch(e) { return res.status(502).json({ error: 'GHL save failed', detail: e.message }); }
+    const isPrefillMode = !!(prefillContactId && prefillSource === 'taxintake');
 
-    const contactId = result.contact && result.contact.id;
+    let contactId;
+    let isNew = false;
+
+    if (isPrefillMode) {
+      // Prefill mode: contact already exists in GHL (it's the TI Pro contact).
+      // Update DD fields directly — no upsert, no tags — so TI Pro automations are not triggered.
+      contactId = prefillContactId;
+      try {
+        await updateContact(pit, contactId, enriched);
+      } catch(e) { return res.status(502).json({ error: 'GHL save failed', detail: e.message }); }
+    } else {
+      const upsertTags = mode === 'send-link' ? ['dd_iv_link_sent'] : ['dd-wizard-submitted'];
+      let result;
+      try {
+        result = await upsertContact(pit, locationId, { email: contact.email, phone: contact.phone, name: answers.dd_client_name }, enriched, upsertTags);
+      } catch(e) { return res.status(502).json({ error: 'GHL save failed', detail: e.message }); }
+      contactId = result.contact && result.contact.id;
+      isNew = result.new || false;
+    }
 
     if (mode === 'send-link') {
       return res.status(200).json({
-        success: true, contactId: contactId, isNew: result.new || false, mode: 'send-link'
+        success: true, contactId: contactId, isNew: isNew, mode: 'send-link'
       });
     }
 
     let ai;
     try { ai = await validateWithAI(enriched); } catch(e) { ai = { status: 'error', risk_count: 0, flags: [], preparer_notes: generateBasicNotes(enriched) }; }
 
-    try {
-      await updateContact(pit, contactId, {
-        dd_ai_result: ai.status === 'flagged' ? 'Flagged' : ai.status === 'clean' ? 'Clean' : 'Error',
-        dd_ai_flags: (ai.flags || []).map(function(f) { return '[' + ((f.severity||'').toUpperCase()) + '] ' + f.description; }).join('\n'),
-        dd_risk_count: String(ai.risk_count || 0),
-        dd_review_required: (ai.risk_count || 0) > 0 ? 'Yes' : 'No',
-        dd_preparer_notes: ai.preparer_notes || ''
-      });
-    } catch(e) { /* non-fatal */ }
+    const aiFields = {
+      dd_ai_result: ai.status === 'flagged' ? 'Flagged' : ai.status === 'clean' ? 'Clean' : 'Error',
+      dd_ai_flags: (ai.flags || []).map(function(f) { return '[' + ((f.severity||'').toUpperCase()) + '] ' + f.description; }).join('\n'),
+      dd_risk_count: String(ai.risk_count || 0),
+      dd_review_required: (ai.risk_count || 0) > 0 ? 'Yes' : 'No',
+      dd_preparer_notes: ai.preparer_notes || ''
+    };
 
     try {
-      await addTag(pit, contactId, (ai.risk_count || 0) > 0 ? 'dd-flagged' : 'dd-clear');
+      await updateContact(pit, contactId, aiFields);
     } catch(e) { /* non-fatal */ }
 
-    if (prefillContactId && prefillSource === 'taxintake') {
+    if (isPrefillMode) {
+      // Mark DD interview completed on the TI contact without adding tags
       try {
         const today = new Date().toISOString().split('T')[0];
-        await updateContact(pit, prefillContactId, {
+        await updateContact(pit, contactId, {
           dd_interview_completed: 'Yes',
           dd_interview_date: today,
-          dd_ai_result: ai.status === 'flagged' ? 'Flagged' : ai.status === 'clean' ? 'Clean' : 'Error'
+          dd_ai_result: aiFields.dd_ai_result
         });
-        console.log('[Submit] Wrote DD status back to TI contact', prefillContactId);
+        console.log('[Submit] Marked DD completed on TI contact', contactId);
       } catch(e) {
-        console.warn('[Submit] Write-back to TI contact failed (non-fatal):', e.message);
+        console.warn('[Submit] DD completion mark failed (non-fatal):', e.message);
       }
+    } else {
+      // Non-prefill: add status tag (may trigger automations, but contact is not a TI contact)
+      try {
+        await addTag(pit, contactId, (ai.risk_count || 0) > 0 ? 'dd-flagged' : 'dd-clear');
+      } catch(e) { /* non-fatal */ }
     }
 
     return res.status(200).json({
-      success: true, contactId: contactId, isNew: result.new || false,
+      success: true, contactId: contactId, isNew: isNew,
       aiResult: { status: ai.status, riskCount: ai.risk_count, flagCount: (ai.flags || []).length }
     });
 
