@@ -89,32 +89,31 @@ async function getFieldMap(locationId, pit) {
 }
 
 // TaxIntake Pro GHL field key → DD field key mapping.
-// TI field keys follow GHL convention: lowercase snake_case, e.g. "TI - First Name" → ti_first_name
+// Actual GHL fieldKey format: contact.ti__<name> (double underscore after ti)
 var TI_TO_DD_MAP = {
-  'ti_first_name':           'dd_client_name_first',
-  'ti_last_name':            'dd_client_name_last',
-  'ti_dob':                  'dd_client_dob',
-  'ti_filing_status':        'dd_filing_status',
-  'ti_email':                'dd_client_email',
-  'ti_phone':                'dd_client_phone',
-  'ti_eitc_denied_prior':    'dd_eic_prior_denial',
-  'ti_hoh_qualifier':        'dd_hoh_qualifying_person',
-  'ti_self_employment':      'dd_self_employed',
-  'ti_se_business_type':     'dd_se_business_type',
-  'ti_number_of_dependents': 'dd_dependent_count',
-  'ti_has_dependents':       'dd_has_dependents',
+  'ti__first_name':                 'dd_client_name_first',
+  'ti__last_name':                  'dd_client_name_last',
+  'ti__date_of_birth':              'dd_client_dob',
+  'ti__filing_status':              'dd_filing_status',
+  'ti__email':                      'dd_client_email',
+  'ti__phone':                      'dd_client_phone',
+  'ti__ever_denied_eitc':           'dd_eic_prior_denial',
+  'ti__hoh_unmarried_confirmation': 'dd_hoh_married',
+  'ti__self_employed':              'dd_self_employed',
+  'ti__business_type':              'dd_se_business_type',
+  'ti__num_dependents':             'dd_dependent_count',
+  'ti__has_dependents':             'dd_has_dependents',
 };
 
-// Dependent fields for 1-8
-for (var _n = 1; _n <= 8; _n++) {
-  TI_TO_DD_MAP['ti_dep' + _n + '_first_name']   = 'dd_dep_' + _n + '_name_first';
-  TI_TO_DD_MAP['ti_dep' + _n + '_last_name']    = 'dd_dep_' + _n + '_name_last';
-  TI_TO_DD_MAP['ti_dep' + _n + '_dob']          = 'dd_dep_' + _n + '_dob';
-  TI_TO_DD_MAP['ti_dep' + _n + '_ssn']          = 'dd_dep_' + _n + '_ssn_last_4';
-  TI_TO_DD_MAP['ti_dep' + _n + '_relationship'] = 'dd_dep_' + _n + '_relationship';
-  TI_TO_DD_MAP['ti_dep' + _n + '_months_home']  = 'dd_dep_' + _n + '_residency_months';
-  TI_TO_DD_MAP['ti_dep' + _n + '_school']       = 'dd_dep_' + _n + '_in_school';
-  TI_TO_DD_MAP['ti_dep' + _n + '_disabled']     = 'dd_dep_' + _n + '_disabled';
+// Dependent fields for 1-10
+for (var _n = 1; _n <= 10; _n++) {
+  TI_TO_DD_MAP['ti__dependent_' + _n + '_name']          = 'dd_dep_' + _n + '_name';
+  TI_TO_DD_MAP['ti__dependent_' + _n + '_dob']           = 'dd_dep_' + _n + '_dob';
+  TI_TO_DD_MAP['ti__dependent_' + _n + '_ssn']           = 'dd_dep_' + _n + '_ssn_last_4';
+  TI_TO_DD_MAP['ti__dependent_' + _n + '_relationship']  = 'dd_dep_' + _n + '_relationship';
+  TI_TO_DD_MAP['ti__dependent_' + _n + '_months_in_home']= 'dd_dep_' + _n + '_residency_months';
+  TI_TO_DD_MAP['ti__dependent_' + _n + '_in_school']     = 'dd_dep_' + _n + '_in_school';
+  TI_TO_DD_MAP['ti__dependent_' + _n + '_disabled']      = 'dd_dep_' + _n + '_disabled';
 }
 
 // Months → Yes/No for residency fields
@@ -227,11 +226,10 @@ module.exports = async function handler(req, res) {
     if (raw.dd_se_business_type)       prefill.dd_se_business_type      = raw.dd_se_business_type;
 
     // Dependents
-    for (var i = 1; i <= 8; i++) {
-      var depFirst = raw['dd_dep_' + i + '_name_first'] || '';
-      var depLast  = raw['dd_dep_' + i + '_name_last']  || '';
-      if (depFirst || depLast) {
-        prefill['dd_dep_' + i + '_name'] = (depFirst + ' ' + depLast).trim();
+    for (var i = 1; i <= 10; i++) {
+      // TI sends full dependent name as a single field
+      if (raw['dd_dep_' + i + '_name']) {
+        prefill['dd_dep_' + i + '_name'] = raw['dd_dep_' + i + '_name'];
       }
 
       var depDob = raw['dd_dep_' + i + '_dob'];
@@ -246,9 +244,8 @@ module.exports = async function handler(req, res) {
       var depResMonths = raw['dd_dep_' + i + '_residency_months'];
       if (depResMonths) prefill['dd_dep_' + i + '_residency'] = normalizeResidency(depResMonths);
 
-      // Age/disability status
-      var depInSchool  = raw['dd_dep_' + i + '_in_school'];
-      var depDisabled  = raw['dd_dep_' + i + '_disabled'];
+      var depInSchool = raw['dd_dep_' + i + '_in_school'];
+      var depDisabled = raw['dd_dep_' + i + '_disabled'];
       if (depInSchool && normalizeYesNo(depInSchool) === 'Yes') {
         prefill['dd_dep_' + i + '_age_status'] = '19-23 Full-Time Student';
       } else if (depDisabled && normalizeYesNo(depDisabled) === 'Yes') {
