@@ -236,7 +236,10 @@ module.exports = async function handler(req, res) {
       if (depDob) prefill['dd_dep_' + i + '_dob'] = depDob;
 
       var depSsn = raw['dd_dep_' + i + '_ssn_last_4'];
-      if (depSsn) prefill['dd_dep_' + i + '_ssn_last_4'] = depSsn;
+      if (depSsn) {
+        var digits = String(depSsn).replace(/\D/g, '');
+        prefill['dd_dep_' + i + '_ssn_last_4'] = digits.length > 4 ? digits.slice(-4) : depSsn;
+      }
 
       var depRel = raw['dd_dep_' + i + '_relationship'];
       if (depRel) prefill['dd_dep_' + i + '_relationship'] = depRel;

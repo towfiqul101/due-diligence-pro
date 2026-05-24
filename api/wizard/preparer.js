@@ -574,12 +574,14 @@ function ppInitPrefill(){
 function ppApplyPrefill(data){
   S.prefillData=data.prefill||{};
   Object.keys(S.prefillData).forEach(function(k){S.data[k]=S.prefillData[k]});
+  console.log('[DD Pro] ppApplyPrefill — depCount:',S.data.dd_dependent_count,'dep1Name:',S.data.dd_dep_1_name,'dep1Dob:',S.data.dd_dep_1_dob);
   if(S.data.dd_filing_status==='Head of Household')S.data.dd_flag_hoh='Yes';
   if(S.data.dd_has_dependents==='Yes'&&S.data.dd_dependent_count){
     var dcEl=document.getElementById('ppDepCnt');
     if(dcEl)dcEl.classList.remove('hidden');
   }
   ensureDeps();buildFlow();
+  console.log('[DD Pro] After ensureDeps — depPgs:',S.depPgs.length,'pages:',S.pages.join(','));
   var banner=document.getElementById('ppPrefillBanner');
   if(banner){banner.classList.add('vis');document.getElementById('ppPrefillName').textContent=data.contactName||'Client';}
   var clientInfoComplete=S.data.dd_client_name&&S.data.dd_client_dob&&S.data.dd_filing_status&&S.data.dd_has_dependents;
@@ -591,10 +593,13 @@ function ppApplyPrefill(data){
 
 function ppPopulateFormFields(){
   if(!S.prefillData)return;
+  var populated=0,notFound=[];
   Object.keys(S.prefillData).forEach(function(key){
     var val=S.prefillData[key];
     if(!val)return;
-    document.querySelectorAll('.pp-f[data-f="'+key+'"]').forEach(function(fieldEl){
+    var els=document.querySelectorAll('.pp-f[data-f="'+key+'"]');
+    if(els.length===0)notFound.push(key);
+    els.forEach(function(fieldEl){populated++;
       fieldEl.classList.add('pp-prefilled');
       var inp=fieldEl.querySelector('.pp-inp,.pp-ta');
       if(inp){inp.value=val;return;}
@@ -611,6 +616,7 @@ function ppPopulateFormFields(){
       });
     });
   });
+  console.log('[DD Pro] ppPopulateFormFields — populated:',populated,'notFound:',notFound);
   if(S.data.dd_has_dependents==='Yes')ppToggle('ppDepCnt',true);
   if(S.data.dd_self_employed==='Yes'){ppToggle('ppST',true);ppToggle('ppSE',true);ppToggle('ppSR',true);ppToggle('ppSBK',true);}
   S.depPgs.forEach(function(depPg,idx){
@@ -652,7 +658,8 @@ buildFlow();updateProg();
       var res=await fetch(prefillUrl);
       console.log('[DD Pro] Prefill response status:',res.status);
       var data=await res.json();
-      console.log('[DD Pro] Prefill data:',JSON.stringify(data).substring(0,300));
+      console.log('[DD Pro] Prefill keys:',data.prefill?Object.keys(data.prefill):data.error);
+      console.log('[DD Pro] Prefill data:',JSON.stringify(data.prefill||{}).substring(0,800));
       if(data.success&&data.prefill){
         ppApplyPrefill(data);
       }else{
