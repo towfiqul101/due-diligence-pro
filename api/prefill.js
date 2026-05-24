@@ -21,12 +21,17 @@ async function isLocationValid(locationId) {
       .eq('location_id', locationId)
       .eq('status', 'active')
       .single();
-    if (data) return { valid: true, tenant: data };
+    if (data) {
+      console.log('[Location] Tenant found:', data.id, 'PIT:', data.ghl_pit ? 'SET' : 'MISSING');
+      return { valid: true, tenant: data };
+    }
+    console.log('[Location] Not found in Supabase, checking DD_LOCATIONS fallback');
     const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
     const found = locations.find(function(l) { return l.locationId === locationId; });
     if (found) return { valid: true, tenant: found };
     return { valid: false };
   } catch (err) {
+    console.error('[Location] Supabase error:', err.message, '— trying DD_LOCATIONS fallback');
     try {
       const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
       const found = locations.find(function(l) { return l.locationId === locationId; });
@@ -144,6 +149,8 @@ module.exports = async function handler(req, res) {
   if (!locResult.valid) return res.status(403).json({ error: 'Location not registered or not active' });
 
   var pit = locResult.tenant.ghl_pit || locResult.tenant.pit;
+  console.log('[Prefill] loc=' + loc + ' PIT=' + (pit ? 'SET(' + String(pit).substring(0,8) + '...)' : 'MISSING') + ' contactId=' + contactId);
+  if (!pit) return res.status(500).json({ error: 'GHL token not configured for this location. Set ghl_pit in dd_tenants.' });
 
   try {
     var fieldMap = await getFieldMap(loc, pit);

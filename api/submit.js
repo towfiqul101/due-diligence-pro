@@ -15,12 +15,17 @@ async function isLocationValid(locationId) {
       .eq('location_id', locationId)
       .eq('status', 'active')
       .single();
-    if (data) return { valid: true, tenant: data };
+    if (data) {
+      console.log('[Location] Tenant found:', data.id, 'PIT:', data.ghl_pit ? 'SET' : 'MISSING');
+      return { valid: true, tenant: data };
+    }
+    console.log('[Location] Not found in Supabase, checking DD_LOCATIONS fallback');
     const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
     const found = locations.find(l => l.locationId === locationId);
     if (found) return { valid: true, tenant: found };
     return { valid: false };
   } catch (err) {
+    console.error('[Location] Supabase error:', err.message, '— trying DD_LOCATIONS fallback');
     try {
       const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
       const found = locations.find(l => l.locationId === locationId);
@@ -192,6 +197,9 @@ export default async function handler(req, res) {
     if (!license.valid) return res.status(403).json({ error: 'License failed', reason: 'Not licensed' });
 
     const pit = license.tenant.ghl_pit || license.tenant.pit;
+    console.log('[Submit] loc=' + locationId + ' mode=' + mode + ' PIT=' + (pit ? 'SET' : 'MISSING'));
+    if (!pit) return res.status(500).json({ error: 'GHL token not configured for this location. Set ghl_pit in dd_tenants.' });
+
     const enriched = { ...answers, dd_interview_mode: mode === 'preparer' ? 'Preparer Interview' : mode === 'send-link' ? 'Client Self-Service' : 'Client Self-Service', dd_interview_date: new Date().toISOString().split('T')[0], dd_interview_status: mode === 'send-link' ? 'Link Sent' : 'Complete' };
 
     // Upsert contact with mode-specific tags

@@ -25,12 +25,17 @@ async function isLocationValid(locationId) {
       .eq('location_id', locationId)
       .eq('status', 'active')
       .single();
-    if (data) return { valid: true, tenant: data };
+    if (data) {
+      console.log('[Location] Tenant found:', data.id, 'PIT:', data.ghl_pit ? 'SET' : 'MISSING');
+      return { valid: true, tenant: data };
+    }
+    console.log('[Location] Not found in Supabase, checking DD_LOCATIONS fallback');
     const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
     const found = locations.find(function(l) { return l.locationId === locationId; });
     if (found) return { valid: true, tenant: found };
     return { valid: false };
   } catch (err) {
+    console.error('[Location] Supabase error:', err.message, '— trying DD_LOCATIONS fallback');
     try {
       const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
       const found = locations.find(function(l) { return l.locationId === locationId; });

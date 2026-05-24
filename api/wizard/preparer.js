@@ -19,12 +19,17 @@ async function isLocationValid(locationId) {
       .eq('location_id', locationId)
       .eq('status', 'active')
       .single();
-    if (data) return { valid: true, tenant: data };
+    if (data) {
+      console.log('[Location] Tenant found:', data.id, 'PIT:', data.ghl_pit ? 'SET' : 'MISSING');
+      return { valid: true, tenant: data };
+    }
+    console.log('[Location] Not found in Supabase, checking DD_LOCATIONS fallback');
     const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
     const found = locations.find(function(l) { return l.locationId === locationId; });
     if (found) return { valid: true, tenant: found };
     return { valid: false };
   } catch (err) {
+    console.error('[Location] Supabase error:', err.message, '— trying DD_LOCATIONS fallback');
     try {
       const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
       const found = locations.find(function(l) { return l.locationId === locationId; });
@@ -484,7 +489,7 @@ document.getElementById('ppSumContent').innerHTML=h;document.getElementById('ppS
 window.ppSubmit=function(){if(!validate('signoff'))return;if(S.data.dd_preparer_signature!=='Yes'){var f=getEl('signoff').querySelector('[data-f="dd_preparer_signature"]');if(f)f.classList.add('err');return}var btn=document.getElementById('ppSubBtn'),banner=document.getElementById('ppErrBanner');banner.classList.remove('vis');btn.disabled=true;btn.innerHTML='<span class="pp-spin"></span> Submitting...';
 var answers={};Object.keys(S.data).forEach(function(k){if(k.startsWith('dd_')&&S.data[k])answers[k]=S.data[k]});var email=S.clientEmail||S.data.dd_client_email||'';
 var payload={locationId:CFG.loc,mode:'preparer',contact:{email:email,phone:S.data.dd_client_phone||'',name:S.data.dd_client_name||''},answers:answers};
-if(CFG.prefillContactId){payload.prefillContactId=CFG.prefillContactId;payload.prefillSource='taxintake';answers.dd_prefill_source='taxintake';answers.dd_prefill_contact_id=CFG.prefillContactId;answers.dd_prefill_date=new Date().toISOString().split('T')[0];}
+if(CFG.prefillContactId){payload.prefillContactId=CFG.prefillContactId;payload.prefillSource=CFG.prefillSource||'taxintake';answers.dd_prefill_source=CFG.prefillSource||'taxintake';answers.dd_prefill_contact_id=CFG.prefillContactId;answers.dd_prefill_date=new Date().toISOString().split('T')[0];}
 fetch(CFG.api+'/submit',{method:'POST',headers:{'Content-Type':'application/json','X-Location-Id':CFG.loc},body:JSON.stringify(payload)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||d.message||'Failed');return d})}).then(function(res){document.getElementById('ppOkName').textContent=S.data.dd_client_name||S.clientEmail||'the client';document.querySelectorAll('.pp-pg').forEach(function(p){p.classList.remove('active')});getEl('success').classList.add('active');document.querySelector('.pp-hdr').style.display='none';document.querySelector('.pp-prog').style.display='none'}).catch(function(err){banner.textContent=err.message;banner.className='pp-banner vis err';btn.disabled=false;btn.innerHTML='Submit & Complete &#9989;'})};
 
 window.ppOpenPDF=function(){var email=S.clientEmail||S.data.dd_client_email||'';if(!email){alert('No client email');return}window.open(CFG.api+'/pdf?email='+encodeURIComponent(email)+'&locationId='+CFG.loc,'_blank')};
@@ -581,7 +586,19 @@ window.ppPrefillExpand=function(){
 // ── End pre-fill mode ───────────────────────────────────────────────────────────
 
 buildFlow();updateProg();
-if(CFG.prefillContactId){S.isPrefill=true;ppInitPrefill();}
+(function(){
+  // Client-side URL param detection — handles source=taxintake and iframe launches
+  var _p=new URLSearchParams(window.location.search);
+  var _cid=CFG.prefillContactId||_p.get('contactId');
+  var _src=_p.get('source');
+  if(_cid){
+    CFG.prefillContactId=_cid;
+    // Record source for submit payload
+    CFG.prefillSource=_src||'taxintake';
+    S.isPrefill=true;
+    ppInitPrefill();
+  }
+})();
 })();
 </script>
 
