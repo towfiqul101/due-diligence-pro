@@ -1,17 +1,33 @@
+import { createClient } from '@supabase/supabase-js';
+
 const GHL_BASE = 'https://services.leadconnectorhq.com';
 const API_VERSION = '2021-07-28';
 
-function getLocations() {
-  try { return JSON.parse(process.env.DD_LOCATIONS || '[]'); }
-  catch(e) { return []; }
-}
-
-function validateLicense(locationId) {
-  const loc = getLocations().find(l => l.id === locationId);
-  if (!loc) return { valid: false, reason: 'Not registered' };
-  if (!loc.active) return { valid: false, reason: 'Inactive' };
-  if (!loc.pit) return { valid: false, reason: 'No token' };
-  return { valid: true, location: loc };
+async function isLocationValid(locationId) {
+  try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+    const { data } = await supabase
+      .from('dd_tenants')
+      .select('id, ghl_pit, firm_name')
+      .eq('location_id', locationId)
+      .eq('status', 'active')
+      .single();
+    if (data) return { valid: true, tenant: data };
+    const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+    const found = locations.find(l => l.locationId === locationId);
+    if (found) return { valid: true, tenant: found };
+    return { valid: false };
+  } catch (err) {
+    try {
+      const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+      const found = locations.find(l => l.locationId === locationId);
+      if (found) return { valid: true, tenant: found };
+    } catch(e) {}
+    return { valid: false };
+  }
 }
 
 async function ghlRequest(method, path, pit, body) {
@@ -172,10 +188,10 @@ export default async function handler(req, res) {
     if (!contact?.email && !contact?.phone) return res.status(400).json({ error: 'Email or phone required' });
     if (!answers) return res.status(400).json({ error: 'No answers' });
 
-    const license = validateLicense(locationId);
-    if (!license.valid) return res.status(403).json({ error: 'License failed', reason: license.reason });
+    const license = await isLocationValid(locationId);
+    if (!license.valid) return res.status(403).json({ error: 'License failed', reason: 'Not licensed' });
 
-    const pit = license.location.pit;
+    const pit = license.tenant.ghl_pit || license.tenant.pit;
     const enriched = { ...answers, dd_interview_mode: mode === 'preparer' ? 'Preparer Interview' : mode === 'send-link' ? 'Client Self-Service' : 'Client Self-Service', dd_interview_date: new Date().toISOString().split('T')[0], dd_interview_status: mode === 'send-link' ? 'Link Sent' : 'Complete' };
 
     // Upsert contact with mode-specific tags

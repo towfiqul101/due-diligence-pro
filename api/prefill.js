@@ -8,9 +8,32 @@
 
 const https = require('https');
 
-function getLocations() {
-  try { return JSON.parse(process.env.DD_LOCATIONS || '[]'); }
-  catch(e) { return []; }
+async function isLocationValid(locationId) {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+    const { data } = await supabase
+      .from('dd_tenants')
+      .select('id, ghl_pit, firm_name')
+      .eq('location_id', locationId)
+      .eq('status', 'active')
+      .single();
+    if (data) return { valid: true, tenant: data };
+    const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+    const found = locations.find(function(l) { return l.locationId === locationId; });
+    if (found) return { valid: true, tenant: found };
+    return { valid: false };
+  } catch (err) {
+    try {
+      const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+      const found = locations.find(function(l) { return l.locationId === locationId; });
+      if (found) return { valid: true, tenant: found };
+    } catch(e) {}
+    return { valid: false };
+  }
 }
 
 function ghlGet(path, pit) {
@@ -117,13 +140,10 @@ module.exports = async function handler(req, res) {
   if (!loc) return res.status(400).json({ error: 'Missing loc param' });
   if (!contactId) return res.status(400).json({ error: 'Missing contactId param' });
 
-  var locations = getLocations();
-  var location = locations.find(function(l) { return l.id === loc; });
-  if (!location) return res.status(403).json({ error: 'Location not registered' });
-  if (!location.active) return res.status(403).json({ error: 'License inactive' });
-  if (!location.pit) return res.status(403).json({ error: 'No API token configured' });
+  var locResult = await isLocationValid(loc);
+  if (!locResult.valid) return res.status(403).json({ error: 'Location not registered or not active' });
 
-  var pit = location.pit;
+  var pit = locResult.tenant.ghl_pit || locResult.tenant.pit;
 
   try {
     var fieldMap = await getFieldMap(loc, pit);

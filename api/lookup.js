@@ -9,18 +9,32 @@
 
 const https = require('https');
 
-function getLocations() {
-  try { return JSON.parse(process.env.DD_LOCATIONS || '[]'); }
-  catch(e) { return []; }
-}
-
-function validateLicense(locationId) {
-  var locations = getLocations();
-  var loc = locations.find(function(l) { return l.id === locationId; });
-  if (!loc) return { valid: false, reason: 'Location not found' };
-  if (!loc.active) return { valid: false, reason: 'License inactive' };
-  if (!loc.pit) return { valid: false, reason: 'No API token configured' };
-  return { valid: true, location: loc };
+async function isLocationValid(locationId) {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+    const { data } = await supabase
+      .from('dd_tenants')
+      .select('id, ghl_pit, firm_name')
+      .eq('location_id', locationId)
+      .eq('status', 'active')
+      .single();
+    if (data) return { valid: true, tenant: data };
+    const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+    const found = locations.find(function(l) { return l.locationId === locationId; });
+    if (found) return { valid: true, tenant: found };
+    return { valid: false };
+  } catch (err) {
+    try {
+      const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+      const found = locations.find(function(l) { return l.locationId === locationId; });
+      if (found) return { valid: true, tenant: found };
+    } catch(e) {}
+    return { valid: false };
+  }
 }
 
 function ghlGet(path, pit) {
@@ -88,11 +102,11 @@ module.exports = async function handler(req, res) {
     if (!email) return res.status(400).json({ error: 'Email is required' });
     if (!locationId) return res.status(400).json({ error: 'Location ID is required' });
 
-    var license = validateLicense(locationId);
+    var license = await isLocationValid(locationId);
     if (!license.valid) {
-      return res.status(403).json({ error: 'License validation failed', reason: license.reason });
+      return res.status(403).json({ error: 'License validation failed', reason: 'Not licensed' });
     }
-    var pit = license.location.pit;
+    var pit = license.tenant.ghl_pit || license.tenant.pit;
 
     // ===== STEP 1: Build field ID → key mapping =====
     var fieldMap;

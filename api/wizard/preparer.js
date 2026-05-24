@@ -6,23 +6,47 @@
  * Same approach as the client wizard endpoint.
  */
 
-module.exports = function handler(req, res) {
+async function isLocationValid(locationId) {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+    const { data } = await supabase
+      .from('dd_tenants')
+      .select('id, ghl_pit, firm_name')
+      .eq('location_id', locationId)
+      .eq('status', 'active')
+      .single();
+    if (data) return { valid: true, tenant: data };
+    const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+    const found = locations.find(function(l) { return l.locationId === locationId; });
+    if (found) return { valid: true, tenant: found };
+    return { valid: false };
+  } catch (err) {
+    try {
+      const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+      const found = locations.find(function(l) { return l.locationId === locationId; });
+      if (found) return { valid: true, tenant: found };
+    } catch(e) {}
+    return { valid: false };
+  }
+}
+
+module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
 
   var loc = req.query.loc || '';
   if (!loc) return res.status(400).send(errPg('Missing location ID', 'The embed code is missing the loc parameter.'));
 
-  var locations = [];
-  try { locations = JSON.parse(process.env.DD_LOCATIONS || '[]'); } catch(e) {}
-  var location = locations.find(function(l) { return l.id === loc; });
-  
-  if (!location) return res.status(403).send(errPg('Not Licensed', 'This location is not registered for Due Diligence Pro.'));
-  if (!location.active) return res.status(403).send(errPg('License Inactive', 'Your Due Diligence Pro license has been deactivated. Contact support.'));
+  var result = await isLocationValid(loc);
+  if (!result.valid) return res.status(403).send(errPg('Not Licensed', 'This location is not registered for Due Diligence Pro.'));
 
-  var brand = location.brand || {};
-  var firm = req.query.firm || brand.firmName || location.name || 'Tax Office';
-  var firmEmail = req.query.email || brand.firmEmail || 'towfiqul.pro@gmail.com';
+  var tenant = result.tenant;
+  var firm = req.query.firm || tenant.firm_name || tenant.name || 'Tax Office';
+  var firmEmail = req.query.email || 'towfiqul.pro@gmail.com';
   firm = decodeURIComponent(firm).replace(/</g, '&lt;').replace(/>/g, '&gt;');
   firmEmail = decodeURIComponent(firmEmail).replace(/</g, '&lt;');
 

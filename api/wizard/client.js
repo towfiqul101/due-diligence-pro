@@ -12,27 +12,49 @@
  * <iframe src="https://dd-wizard-api.vercel.app/api/wizard/client?loc=XXX" style="width:100%;min-height:100vh;border:none;"></iframe>
  */
 
-module.exports = function handler(req, res) {
+async function isLocationValid(locationId) {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+    const { data } = await supabase
+      .from('dd_tenants')
+      .select('id, ghl_pit, firm_name')
+      .eq('location_id', locationId)
+      .eq('status', 'active')
+      .single();
+    if (data) return { valid: true, tenant: data };
+    const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+    const found = locations.find(function(l) { return l.locationId === locationId; });
+    if (found) return { valid: true, tenant: found };
+    return { valid: false };
+  } catch (err) {
+    try {
+      const locations = JSON.parse(process.env.DD_LOCATIONS || '[]');
+      const found = locations.find(function(l) { return l.locationId === locationId; });
+      if (found) return { valid: true, tenant: found };
+    } catch(e) {}
+    return { valid: false };
+  }
+}
+
+module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
 
   var loc = req.query.loc || '';
   if (!loc) return res.status(400).send(errorPage('Missing location ID', 'The embed code is missing the loc parameter.'));
 
-  // Validate license
-  var locations = [];
-  try { locations = JSON.parse(process.env.DD_LOCATIONS || '[]'); } catch(e) {}
-  var location = locations.find(function(l) { return l.id === loc; });
-  
-  if (!location) return res.status(403).send(errorPage('Not Licensed', 'This location is not registered for Due Diligence Pro.'));
-  if (!location.active) return res.status(403).send(errorPage('License Inactive', 'Your Due Diligence Pro license has been deactivated. Contact support.'));
+  var result = await isLocationValid(loc);
+  if (!result.valid) return res.status(403).send(errorPage('Not Licensed', 'This location is not registered for Due Diligence Pro.'));
 
-  // Brand config — from URL params (buyer can customize) or from DD_LOCATIONS config
-  var brand = location.brand || {};
-  var color = req.query.color || brand.color || '4F46E5';
-  var firm = req.query.firm || brand.firmName || location.name || 'Your Tax Office';
-  var firmPhone = req.query.phone || brand.firmPhone || '';
-  var firmEmail = req.query.email || brand.firmEmail || '';
+  var tenant = result.tenant;
+  var color = req.query.color || '4F46E5';
+  var firm = req.query.firm || tenant.firm_name || tenant.name || 'Your Tax Office';
+  var firmPhone = req.query.phone || '';
+  var firmEmail = req.query.email || '';
 
   // Sanitize inputs
   color = color.replace(/[^a-fA-F0-9]/g, '').substring(0, 6);
