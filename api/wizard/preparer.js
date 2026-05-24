@@ -460,7 +460,7 @@ window.ppIn=function(inp){var f=inp.closest('.pp-f');if(f){S.data[f.getAttribute
 window.ppRad=function(btn){btn.parentElement.querySelectorAll('.pp-rb').forEach(function(b){b.classList.remove('sel')});btn.classList.add('sel');var f=btn.closest('.pp-f');if(f){S.data[f.getAttribute('data-f')]=btn.getAttribute('data-v');f.classList.remove('err')}};
 window.ppChk=function(lbl){var cb=lbl.querySelector('input');cb.checked=!cb.checked;lbl.classList.toggle('chk',cb.checked);var f=lbl.closest('.pp-f');if(f){S.data[f.getAttribute('data-f')]=Array.from(f.querySelectorAll('input:checked')).map(function(c){return c.value}).join(', ');f.classList.remove('err')}};
 window.ppToggle=function(id,s){var e=document.getElementById(id);if(e){e.classList.toggle('hidden',!s);if(s)e.classList.add('fade')}};
-window.ppNext=function(){var pg=S.pages[S.cur];if(pg!=='lookup'&&!validate(pg))return;if(pg==='client_info'||pg==='credits'){ensureDeps();buildFlow()}if(S.cur<S.pages.length-1)show(S.cur+1)};
+window.ppNext=function(){var pg=S.pages[S.cur];if(pg!=='lookup'&&!validate(pg))return;if(pg==='client_info'||pg==='credits'){ensureDeps();buildFlow();if(S.isPrefill)setTimeout(ppPopulateFormFields,50);}if(S.cur<S.pages.length-1)show(S.cur+1)};
 window.ppBack=function(){if(S.cur>0)show(S.cur-1)};
 window.ppGo=function(name){if(name==='summary'&&S.mode==='existing'){S.pages=['lookup','summary','verify','prepinfo','signoff'];show(1);return}if(name==='client_info'){S.mode='new';S.clientData=null;buildFlow();var idx=S.pages.indexOf('client_info');if(idx>=0)show(idx);return}var idx=S.pages.indexOf(name);if(idx>=0)show(idx)};
 
