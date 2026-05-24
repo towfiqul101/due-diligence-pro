@@ -464,43 +464,59 @@ window.ppNext=function(){var pg=S.pages[S.cur];if(pg!=='lookup'&&!validate(pg))r
 window.ppBack=function(){if(S.cur>0)show(S.cur-1)};
 window.ppGo=function(name){if(name==='summary'&&S.mode==='existing'){S.pages=['lookup','summary','verify','prepinfo','signoff'];show(1);return}if(name==='client_info'){S.mode='new';S.clientData=null;buildFlow();var idx=S.pages.indexOf('client_info');if(idx>=0)show(idx);return}var idx=S.pages.indexOf(name);if(idx>=0)show(idx)};
 
-window.ppLookup=function(){var q=document.getElementById('ppSearch').value.trim();var st=document.getElementById('ppSearchStatus');var card=document.getElementById('ppClientCard');var btn=document.getElementById('ppSearchBtn');if(!q){st.className='pp-banner vis err';st.textContent='Enter an email, phone, or name.';card.classList.remove('vis');return}btn.disabled=true;btn.textContent='Searching...';st.className='pp-banner vis info';st.textContent='Looking up client...';card.classList.remove('vis');
-fetch(CFG.api+'/lookup?email='+encodeURIComponent(q)+'&locationId='+CFG.loc).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(res){
-  if(!res.ok)throw new Error(res.d.error||'Not found');
-  var c=res.d.contact;
-  S.clientEmail=c.email||q;
-  // Load whatever DD data exists (may be empty)
-  Object.keys(c).forEach(function(k){if(k.startsWith('dd_'))S.data[k]=c[k]});
-  // Pre-populate basic contact info for the interview
-  if(!S.data.dd_client_name&&c.name)S.data.dd_client_name=c.name;
-  if(!S.data.dd_client_email&&c.email)S.data.dd_client_email=c.email;
-  if(!S.data.dd_client_phone&&c.phone)S.data.dd_client_phone=c.phone;
-  if(res.d.noData){
-    // Client exists in GHL but no DD data yet — offer to start their interview
-    st.className='pp-banner vis info';st.textContent='Client found in CRM. No prior DD interview on file — start one below.';
-    card.classList.add('vis');
-    document.getElementById('ppCardName').textContent=c.name||c.email||q;
-    document.getElementById('ppCardInfo').textContent='No DD interview on file — click to start';
-    document.getElementById('ppClientCard').querySelector('.pp-btn-nx').textContent='Start DD Interview →';
-    document.getElementById('ppClientCard').querySelector('.pp-btn-nx').onclick=function(){S.mode='new';buildFlow();var idx=S.pages.indexOf('client_info');show(idx>=0?idx:1)};
-    document.getElementById('ppSendPanel').style.display='none';
-  } else {
-    S.clientData=c;S.mode='existing';
-    st.className='pp-banner vis ok';st.textContent='Client found! '+res.d.fieldCount+' DD fields on file.';
-    card.classList.add('vis');
-    document.getElementById('ppCardName').textContent=S.data.dd_client_name||c.name||q;
-    document.getElementById('ppCardInfo').textContent=(S.data.dd_filing_status||'Status unknown')+' | '+(S.data.dd_interview_date||'Date unknown');
-    document.getElementById('ppClientCard').querySelector('.pp-btn-nx').textContent='Review This Client →';
-    document.getElementById('ppClientCard').querySelector('.pp-btn-nx').onclick=function(){ppGo('summary')};
-    document.getElementById('ppSendPanel').style.display='none';
-    buildFlow();
-  }
-}).catch(function(err){st.className='pp-banner vis err';st.textContent=err.message;card.classList.remove('vis');var panel=document.getElementById('ppSendPanel');panel.style.display='block';if(q.includes('@'))document.getElementById('ppSendEmail').value=q}).finally(function(){btn.disabled=false;btn.innerHTML='&#128269; Find'})};
+window.ppLookup=async function(){
+  var q=document.getElementById('ppSearch').value.trim();
+  var st=document.getElementById('ppSearchStatus');
+  var card=document.getElementById('ppClientCard');
+  var btn=document.getElementById('ppSearchBtn');
+  if(!q){st.className='pp-banner vis err';st.textContent='Enter an email, phone, or name.';card.classList.remove('vis');return}
+  btn.disabled=true;btn.textContent='Searching...';st.className='pp-banner vis info';st.textContent='Looking up client...';card.classList.remove('vis');
+  try{
+    var url='/api/lookup?email='+encodeURIComponent(q)+'&locationId='+CFG.loc;
+    console.log('[DD Pro] Lookup URL:',url);
+    var r=await fetch(url);
+    console.log('[DD Pro] Lookup status:',r.status);
+    var res=await r.json();
+    console.log('[DD Pro] Lookup data:',JSON.stringify(res).substring(0,300));
+    if(!r.ok)throw new Error(res.error||'Not found');
+    var c=res.contact;
+    S.clientEmail=c.email||q;
+    Object.keys(c).forEach(function(k){if(k.startsWith('dd_'))S.data[k]=c[k]});
+    if(!S.data.dd_client_name&&c.name)S.data.dd_client_name=c.name;
+    if(!S.data.dd_client_email&&c.email)S.data.dd_client_email=c.email;
+    if(!S.data.dd_client_phone&&c.phone)S.data.dd_client_phone=c.phone;
+    var cardBtn=document.getElementById('ppClientCard').querySelector('.pp-btn-nx');
+    if(res.noData){
+      st.className='pp-banner vis info';st.textContent='Client found in CRM — no prior DD interview on file. Start one below.';
+      card.classList.add('vis');
+      document.getElementById('ppCardName').textContent=c.name||c.email||q;
+      document.getElementById('ppCardInfo').textContent='No DD interview on file — click to start';
+      cardBtn.textContent='Start DD Interview →';
+      cardBtn.onclick=function(){S.mode='new';buildFlow();var idx=S.pages.indexOf('client_info');show(idx>=0?idx:1)};
+      document.getElementById('ppSendPanel').style.display='none';
+    }else{
+      S.clientData=c;S.mode='existing';
+      st.className='pp-banner vis ok';st.textContent='Client found! '+res.fieldCount+' DD fields on file.';
+      card.classList.add('vis');
+      document.getElementById('ppCardName').textContent=S.data.dd_client_name||c.name||q;
+      document.getElementById('ppCardInfo').textContent=(S.data.dd_filing_status||'Status unknown')+' | '+(S.data.dd_interview_date||'Date unknown');
+      cardBtn.textContent='Review This Client →';
+      cardBtn.onclick=function(){ppGo('summary')};
+      document.getElementById('ppSendPanel').style.display='none';
+      buildFlow();
+    }
+  }catch(err){
+    console.error('[DD Pro] Lookup error:',err);
+    st.className='pp-banner vis err';st.textContent=err.message;card.classList.remove('vis');
+    var panel=document.getElementById('ppSendPanel');panel.style.display='block';
+    if(q.includes('@'))document.getElementById('ppSendEmail').value=q;
+  }finally{btn.disabled=false;btn.innerHTML='&#128269; Find'}
+};
 document.getElementById('ppSearch').addEventListener('keydown',function(e){if(e.key==='Enter')ppLookup()});
 
 window.ppSendLink=function(){var email=document.getElementById('ppSendEmail').value.trim();var phone=document.getElementById('ppSendPhone').value.trim();var name=document.getElementById('ppSendName').value.trim();var btn=document.getElementById('ppSendBtn');var st=document.getElementById('ppSendStatus');if(!email){st.className='pp-banner vis err';st.textContent='Email is required.';return}btn.disabled=true;btn.innerHTML='<span class="pp-spin"></span> Sending...';st.className='pp-banner vis info';st.textContent='Creating contact and sending link...';
 var payload={locationId:CFG.loc,mode:'send-link',contact:{email:email,phone:phone,name:name},answers:{dd_interview_status:'Link Sent',dd_interview_mode:'Client Self-Service',dd_client_name:name,dd_client_email:email,dd_client_phone:phone}};
-fetch(CFG.api+'/submit',{method:'POST',headers:{'Content-Type':'application/json','X-Location-Id':CFG.loc},body:JSON.stringify(payload)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Failed');return d})}).then(function(res){st.className='pp-banner vis ok';st.innerHTML='<strong>Link sent!</strong> Client will receive the DD interview link at '+email+'.';btn.disabled=true;btn.innerHTML='&#9989; Link Sent';var actions=document.getElementById('ppSendActions');if(actions)actions.style.display='flex'}).catch(function(err){st.className='pp-banner vis err';st.textContent='Error: '+err.message;btn.disabled=false;btn.innerHTML='&#128233; Send Interview Link'})};
+fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json','X-Location-Id':CFG.loc},body:JSON.stringify(payload)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Failed');return d})}).then(function(res){st.className='pp-banner vis ok';st.innerHTML='<strong>Link sent!</strong> Client will receive the DD interview link at '+email+'.';btn.disabled=true;btn.innerHTML='&#9989; Link Sent';var actions=document.getElementById('ppSendActions');if(actions)actions.style.display='flex'}).catch(function(err){st.className='pp-banner vis err';st.textContent='Error: '+err.message;btn.disabled=false;btn.innerHTML='&#128233; Send Interview Link'})};
 window.ppResendLink=function(){document.getElementById('ppSendBtn').disabled=false;document.getElementById('ppSendBtn').innerHTML='&#128233; Send Interview Link';document.getElementById('ppSendStatus').className='pp-banner';var a=document.getElementById('ppSendActions');if(a)a.style.display='none'};
 window.ppSendAnother=function(){document.getElementById('ppSendEmail').value='';document.getElementById('ppSendPhone').value='';document.getElementById('ppSendName').value='';ppResendLink();document.getElementById('ppSendEmail').focus()};
 
@@ -521,10 +537,10 @@ window.ppSubmit=function(){if(!validate('signoff'))return;if(S.data.dd_preparer_
 var answers={};Object.keys(S.data).forEach(function(k){if(k.startsWith('dd_')&&S.data[k])answers[k]=S.data[k]});var email=S.clientEmail||S.data.dd_client_email||'';
 var payload={locationId:CFG.loc,mode:'preparer',contact:{email:email,phone:S.data.dd_client_phone||'',name:S.data.dd_client_name||''},answers:answers};
 if(CFG.prefillContactId){payload.prefillContactId=CFG.prefillContactId;payload.prefillSource=CFG.prefillSource||'taxintake';answers.dd_prefill_source=CFG.prefillSource||'taxintake';answers.dd_prefill_contact_id=CFG.prefillContactId;answers.dd_prefill_date=new Date().toISOString().split('T')[0];}
-fetch(CFG.api+'/submit',{method:'POST',headers:{'Content-Type':'application/json','X-Location-Id':CFG.loc},body:JSON.stringify(payload)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||d.message||'Failed');return d})}).then(function(res){document.getElementById('ppOkName').textContent=S.data.dd_client_name||S.clientEmail||'the client';document.querySelectorAll('.pp-pg').forEach(function(p){p.classList.remove('active')});getEl('success').classList.add('active');document.querySelector('.pp-hdr').style.display='none';document.querySelector('.pp-prog').style.display='none'}).catch(function(err){banner.textContent=err.message;banner.className='pp-banner vis err';btn.disabled=false;btn.innerHTML='Submit & Complete &#9989;'})};
+fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json','X-Location-Id':CFG.loc},body:JSON.stringify(payload)}).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||d.message||'Failed');return d})}).then(function(res){document.getElementById('ppOkName').textContent=S.data.dd_client_name||S.clientEmail||'the client';document.querySelectorAll('.pp-pg').forEach(function(p){p.classList.remove('active')});getEl('success').classList.add('active');document.querySelector('.pp-hdr').style.display='none';document.querySelector('.pp-prog').style.display='none'}).catch(function(err){banner.textContent=err.message;banner.className='pp-banner vis err';btn.disabled=false;btn.innerHTML='Submit & Complete &#9989;'})};
 
-window.ppOpenPDF=function(){var email=S.clientEmail||S.data.dd_client_email||'';if(!email){alert('No client email');return}window.open(CFG.api+'/pdf?email='+encodeURIComponent(email)+'&locationId='+CFG.loc,'_blank')};
-window.ppViewAI=function(){var panel=document.getElementById('ppAIPanel');var notes=document.getElementById('ppAINotes');if(panel.style.display==='none'){var n=S.data.dd_preparer_notes||'';if(n){notes.textContent=n;panel.style.display='block'}else{var email=S.clientEmail||S.data.dd_client_email||'';notes.textContent='Loading...';panel.style.display='block';fetch(CFG.api+'/lookup?email='+encodeURIComponent(email)+'&locationId='+CFG.loc).then(function(r){return r.json()}).then(function(d){if(d.success&&d.contact.dd_preparer_notes){notes.textContent=d.contact.dd_preparer_notes;if(d.contact.dd_ai_result)notes.textContent+='\n\nAI Result: '+d.contact.dd_ai_result;if(d.contact.dd_risk_count)notes.textContent+='\nRisk Flags: '+d.contact.dd_risk_count}else notes.textContent='No AI analysis available yet.'}).catch(function(){notes.textContent='Failed to load.'})}}else panel.style.display='none'};
+window.ppOpenPDF=function(){var email=S.clientEmail||S.data.dd_client_email||'';if(!email){alert('No client email');return}window.open('/api/pdf?email='+encodeURIComponent(email)+'&locationId='+CFG.loc,'_blank')};
+window.ppViewAI=function(){var panel=document.getElementById('ppAIPanel');var notes=document.getElementById('ppAINotes');if(panel.style.display==='none'){var n=S.data.dd_preparer_notes||'';if(n){notes.textContent=n;panel.style.display='block'}else{var email=S.clientEmail||S.data.dd_client_email||'';notes.textContent='Loading...';panel.style.display='block';fetch('/api/lookup?email='+encodeURIComponent(email)+'&locationId='+CFG.loc).then(function(r){return r.json()}).then(function(d){if(d.success&&d.contact.dd_preparer_notes){notes.textContent=d.contact.dd_preparer_notes;if(d.contact.dd_ai_result)notes.textContent+='\n\nAI Result: '+d.contact.dd_ai_result;if(d.contact.dd_risk_count)notes.textContent+='\nRisk Flags: '+d.contact.dd_risk_count}else notes.textContent='No AI analysis available yet.'}).catch(function(){notes.textContent='Failed to load.'})}}else panel.style.display='none'};
 
 // ── Pre-fill mode ──────────────────────────────────────────────────────────────
 function ppInitPrefill(){
@@ -536,7 +552,7 @@ function ppInitPrefill(){
     Array.from(lkPg.children).forEach(function(el){el.style.display='none'});
     lkPg.appendChild(ov);
   }
-  fetch(CFG.api+'/prefill?loc='+encodeURIComponent(CFG.loc)+'&contactId='+encodeURIComponent(CFG.prefillContactId))
+  fetch('/api/prefill?loc='+encodeURIComponent(CFG.loc)+'&contactId='+encodeURIComponent(CFG.prefillContactId))
     .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
     .then(function(res){
       if(!res.ok)throw new Error(res.d.error||'Pre-fill failed');
@@ -617,17 +633,37 @@ window.ppPrefillExpand=function(){
 // ── End pre-fill mode ───────────────────────────────────────────────────────────
 
 buildFlow();updateProg();
-(function(){
-  // Client-side URL param detection — handles source=taxintake and iframe launches
-  var _p=new URLSearchParams(window.location.search);
-  var _cid=CFG.prefillContactId||_p.get('contactId');
-  var _src=_p.get('source');
-  if(_cid){
-    CFG.prefillContactId=_cid;
-    // Record source for submit payload
-    CFG.prefillSource=_src||'taxintake';
+(async function initWizard(){
+  var params=new URLSearchParams(window.location.search);
+  var contactId=params.get('contactId')||CFG.prefillContactId;
+  var source=params.get('source');
+  var loc=params.get('loc')||CFG.loc;
+  console.log('[DD Pro] initWizard:',{contactId:contactId||'none',source:source||'none',loc:loc});
+  console.log('[DD Pro] URL:',window.location.href);
+  if(contactId){
+    CFG.prefillContactId=contactId;
+    CFG.prefillSource=source||'taxintake';
     S.isPrefill=true;
-    ppInitPrefill();
+    var searchBtn=document.getElementById('ppSearchBtn');
+    if(searchBtn){searchBtn.disabled=true;searchBtn.textContent='Loading from TaxIntake...';}
+    try{
+      var prefillUrl='/api/prefill?loc='+encodeURIComponent(loc)+'&contactId='+encodeURIComponent(contactId);
+      console.log('[DD Pro] Fetching prefill:',prefillUrl);
+      var res=await fetch(prefillUrl);
+      console.log('[DD Pro] Prefill response status:',res.status);
+      var data=await res.json();
+      console.log('[DD Pro] Prefill data:',JSON.stringify(data).substring(0,300));
+      if(data.success&&data.prefill){
+        ppApplyPrefill(data);
+      }else{
+        throw new Error(data.error||'Pre-fill failed');
+      }
+    }catch(err){
+      console.error('[DD Pro] Pre-fill error:',err.message);
+      if(searchBtn){searchBtn.disabled=false;searchBtn.innerHTML='&#128269; Find';}
+      var st=document.getElementById('ppSearchStatus');
+      if(st){st.className='pp-banner vis err';st.textContent='Pre-fill error: '+err.message;}
+    }
   }
 })();
 })();
