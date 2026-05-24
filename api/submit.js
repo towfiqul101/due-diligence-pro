@@ -63,7 +63,6 @@ async function upsertContact(pit, locationId, contact, customFields, tags) {
     contact.phone ? { phone: contact.phone } : {},
     {
       customFields: cfArray,
-      source: 'DD Wizard',
       tags: tags || ['dd-wizard-submitted']
     }
   ));
@@ -234,7 +233,7 @@ module.exports = async function handler(req, res) {
       try {
         const today = new Date().toISOString().split('T')[0];
         await updateContact(pit, prefillContactId, {
-          dd_interview_status: 'Complete',
+          dd_interview_completed: 'Yes',
           dd_interview_date: today,
           dd_ai_result: ai.status === 'flagged' ? 'Flagged' : ai.status === 'clean' ? 'Clean' : 'Error'
         });
